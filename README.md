@@ -36,7 +36,6 @@ python research_bot.py
 
 📁 File Structure
 ```
-Edit
 📂 ResearcherBot  
  ┣ 📜 research_bot.py  # Main script 🚀  
  ┣ 📜 research_agent.yaml  # AI research workflow 🧠  
