@@ -1,0 +1,91 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/julep-ai/julep/refs/heads/dev/schemas/create_task_request.json
+name: Research Agent
+description: A research assistant that can search the web and send the summary to Discord
+########################################################
+####################### INPUT ##########################
+########################################################
+# Define the input schema for the task
+input_schema:
+  type: object
+  properties:
+    topic:
+      type: string
+      description: The main topic to research
+    num_questions:
+      type: integer
+      description: The number of search queries to generate
+########################################################
+####################### TOOLS ##########################
+########################################################
+# Define the tools that the agent can use
+tools:
+  - name: browser
+    type: integration
+    integration:
+      provider: browserbase
+  - name: discord_webhook
+    type: api_call
+    api_call:
+      url: https://discord.com/api/webhooks/https://discord.com/api/webhooks/1350353780247363605/tAmaXlUc9IipoxR2MnIfLR9DdmEhkkrUFqCwcptDri7ZNX0Jzmert-jWCCp_XM8MNVlE
+      method: POST
+      headers:
+        Content-Type: application/json
+########################################################
+####################### MAIN WORKFLOW #################
+########################################################
+# Special variables:
+# - steps[index].input: for accessing the input to the step at that index
+# - steps[index].output: for accessing the output of the step at that index
+# - _: for accessing the output of the previous step
+# Define the main workflow
+main:
+# Step 0: Generate search queries
+- prompt:
+    - role: system
+      content: >-
+        $ f"""
+        You are a research assistant.
+        Generate {{steps[0].input.num_questions|default(30, true)}} diverse search queries related to the topic:
+        {steps[0].input.topic}
+        Write one query per line.
+        """
+  unwrap: true
+# Step 1: Evaluate the search queries using a simple python expression
+- evaluate:
+    search_queries: $ _.split(NEWLINE)
+# Step 2: Run the web search in parallel for each query
+- over: $ *.search*queries
+  map:
+    tool: browser
+    arguments:
+      url: $ f"https://www.google.com/search?q={_}"
+  parallelism: 5
+# Step 3: Collect the results from the web search
+- evaluate:
+    search_results: $ _
+# Step 4: Summarize the results
+- prompt:
+    - role: system
+      content: >
+        $ f"""
+        You are a research summarizer. Create a comprehensive summary of the following research results on the topic {steps[0].input.topic}.
+        The summary should be well-structured, informative, and highlight key findings and insights. Keep the summary concise and to the point.
+        The length of the summary should be less than 150 words.
+        Here are the search results:
+        {_.search_results}
+        """
+  unwrap: true
+  settings:
+    model: gpt-4o-mini
+# Step 5: Format the discord message
+- evaluate:
+    discord_message: |-
+      $ f'''
+      **Research Summary for {steps[0].input.topic}**
+      {_}
+      '''
+# Step 6: Send the summary to Discord
+- tool: discord_webhook
+  arguments:
+    json_: 
+      content: $ *.discord*message[:2000] # Discord has a 2000 character limit
